@@ -42,3 +42,30 @@ func NewService(queueSize int, processor Processor) *Service {
 		cancelAll: cancel,
 	}
 }
+
+func (s *Service) Start(nWorkers int) {
+	if nWorkers <=0 {
+		nWorkers = 1
+	}
+
+	for i := 0; i < nWorkers; i++ {
+		s.wg.Add(1)
+		go s.workerLoop()
+	}
+}
+
+func (s *service) workerLoop() {
+	defer s.wg.Done()
+
+	for {
+		select {
+		case <-s.baseCtx.Done():
+			return
+		case jobId, ok := <-s.queue:
+			if !ok {
+				return
+			}
+			_= jobId // TODO: process job
+		}
+	}
+}
