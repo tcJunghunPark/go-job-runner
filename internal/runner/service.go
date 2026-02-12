@@ -1,4 +1,4 @@
-pakage runner
+package runner
 
 import (
 	"context"
@@ -54,18 +54,18 @@ func (s *Service) Start(nWorkers int) {
 	}
 }
 
-func (s *service) workerLoop() {
+func (s *Service) workerLoop() {
 	defer s.wg.Done()
 
 	for {
 		select {
 		case <-s.baseCtx.Done():
 			return
-		case jobId, ok := <-s.queue:
+		case jobID, ok := <-s.queue:
 			if !ok {
 				return
 			}
-			_= jobId // TODO: process job
+			_= jobID // TODO: process job
 		}
 	}
 }
