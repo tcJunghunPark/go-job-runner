@@ -3,7 +3,13 @@ package runner
 import (
 	"context"
 	"sync"
+	"errors"
+	"fmt"
+	"sync/atomic"
+	"time"
 )
+
+var ErrStopped = errors.New("Runner is stopped")
 
 type Processor func(ctx context.Context, job Job) (string, error)
 
@@ -23,6 +29,7 @@ type Service struct {
 	wg sync.WaitGroup
 	processor Processor
 
+	counter uint64
 	accepting bool
 	baseCtx context.Context
 	cancelAll context.CancelFunc
@@ -65,7 +72,38 @@ func (s *Service) workerLoop() {
 			if !ok {
 				return
 			}
-			_= jobID // TODO: process job
+			_ = jobID // TODO: process job
 		}
+	}
+}
+
+func (s *Service) Submit(ctx context.Context, params map[string]string) (string, error) {
+	s.mu.Lock()
+	if !s.accepting {
+		s.mu.Unlock()
+		return "", ErrStopped
+	}
+
+	now := time.Now().UTC()
+	id := fmt.Sprintf("job-%d-%d", now.UnixNano(), atomic.AddUint64(&s.counter, 1))
+
+	s.jobs[id] = &jobRecord{
+		job: Job{
+			ID: id,
+			Params: params,
+			CreatedAt: now,
+		},
+		state: StatePending,
+		updatedAt: now.UnixNano(),
+	}
+	s.mu.Unlock()
+
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case <- s.baseCtx.Done():
+		return "", ErrStopped
+	case s.queue <- id:
+		return id, nil
 	}
 }
