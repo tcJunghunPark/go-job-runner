@@ -73,7 +73,7 @@ func (s *Service) workerLoop() {
 			if !ok {
 				return
 			}
-			_ = s.runJob(jobID) // TODO: process job
+			_ = s.runJob(jobID)
 		}
 	}
 }
@@ -123,17 +123,19 @@ func (s *Service) cancelJobProcess(jobID string) {
 	s.mu.Unlock()
 }
 
-func (s *Service) getJobLocked(jobID string) (*jobRecord, error) {
-	job := s.jobs[jobID]
-	if job == nil {
+func (s *Service) getJobLocked(jobID string) (*Snapshot, error) {
+	record := s.jobs[jobID]
+	if record == nil {
 		return nil, ErrJobNotFound
 	}
-	jobSnapshot := &jobRecord{
-		job:       job.job,
-		state:     job.state,
-		result:    job.result,
-		err:       job.err,
-		updatedAt: job.updatedAt,
+	jobSnapshot := &Snapshot{
+		ID:        jobID,
+		Params:    cloneParams(record.job.Params),
+		State:     record.state,
+		Result:    record.result,
+		Error:     record.err,
+		CreatedAt: record.job.CreatedAt,
+		UpdatedAt: record.updatedAt,
 	}
 	return jobSnapshot, nil
 }
@@ -145,7 +147,7 @@ func (s *Service) runJob(jobID string) error {
 		s.mu.Unlock()
 		return err
 	}
-	if jobSnapshot.state != StatePending {
+	if jobSnapshot.State != StatePending {
 		s.mu.Unlock()
 		return nil
 	}
@@ -155,12 +157,74 @@ func (s *Service) runJob(jobID string) error {
 	_, cancel := context.WithCancel(s.baseCtx)
 	job.cancel = cancel
 	s.mu.Unlock()
-	// TODO process job
+	// TODO: Call job processor
 	s.mu.Lock()
 	job = s.jobs[jobID]
-	job.state = StateSucceeded
+
+	// TODO: Update job state based on processing result
 	job.cancel = nil
 	job.updatedAt = time.Now().UTC()
 	s.mu.Unlock()
 	return nil
+}
+
+func cloneParams(src map[string]string) map[string]string {
+	if src == nil {
+		return map[string]string{}
+	}
+	dst := make(map[string]string, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+func (s *Service) GetJob(id string) (*Snapshot, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	job, exists := s.jobs[id]
+	if !exists {
+		return &Snapshot{}, ErrJobNotFound
+	}
+	return &Snapshot{
+		ID:        id,
+		Params:    cloneParams(job.job.Params),
+		State:     job.state,
+		Result:    job.result,
+		Error:     job.err,
+		CreatedAt: job.job.CreatedAt,
+		UpdatedAt: job.updatedAt,
+	}, nil
+}
+
+func (s *Service) CancelJob(id string) error {
+	s.mu.Lock()
+	job, exists := s.jobs[id]
+	if !exists {
+		s.mu.Unlock()
+		return ErrJobNotFound
+	}
+	if job.state != StatePending && job.state != StateRunning {
+		s.mu.Unlock()
+		return nil
+	}
+	job.state = StateCanceled
+	job.updatedAt = time.Now().UTC()
+	cancel := job.cancel
+	s.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	return nil
+}
+
+func (s *Service) Stop() {
+	s.mu.Lock()
+	if s.accepting {
+		s.accepting = false
+	}
+	close(s.queue)
+	s.mu.Unlock()
+	s.wg.Wait()
+	s.cancelAll()
 }

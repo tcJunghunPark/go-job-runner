@@ -11,18 +11,19 @@ const (
 	StateFailed    State = "FAILED"
 	StateCanceled  State = "CANCELED"
 )
+
 type Job struct {
-	ID    string
-	Params map[string]string
+	ID        string
+	Params    map[string]string
 	CreatedAt time.Time
 }
 
 type Snapshot struct {
-	ID string
-	Params map[string]string
-	State State
-	Result string
-	Error string
+	ID        string
+	Params    map[string]string
+	State     State
+	Result    string
+	Error     string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
